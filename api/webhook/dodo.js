@@ -1,8 +1,5 @@
 const { createClient } = require("@supabase/supabase-js");
 
-const SUPABASE_URL = process.env.SUPABASE_URL;
-const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
 // Events that upgrade/keep premium
 const UPGRADE_EVENTS = [
     "payment.succeeded",
@@ -13,17 +10,30 @@ const UPGRADE_EVENTS = [
 
 // Events that downgrade to free
 const CANCEL_EVENTS = ["subscription.cancelled"];
-
 const ALL_HANDLED = [...UPGRADE_EVENTS, ...CANCEL_EVENTS];
 
 module.exports = async function handler(req, res) {
     // CORS preflight
     if (req.method === "OPTIONS") {
+        res.setHeader("Access-Control-Allow-Origin", "*");
+        res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
+        res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
         return res.status(200).end();
     }
 
+    res.setHeader("Access-Control-Allow-Origin", "*");
+
     if (req.method !== "POST") {
         return res.status(405).json({ error: "Method not allowed" });
+    }
+
+    // Validate env vars
+    const SUPABASE_URL = process.env.SUPABASE_URL;
+    const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+    if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
+        console.error("FATAL: Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY env vars");
+        return res.status(500).json({ error: "Server misconfigured: missing Supabase credentials" });
     }
 
     const event = req.body;
@@ -31,6 +41,7 @@ module.exports = async function handler(req, res) {
     const data = event.data;
 
     console.log(`Received webhook event: ${eventType}`);
+    console.log(`Event payload keys: ${JSON.stringify(Object.keys(event))}`);
 
     // Ignore unhandled events
     if (!ALL_HANDLED.includes(eventType)) {
@@ -73,7 +84,7 @@ module.exports = async function handler(req, res) {
         // --- Handle upgrade/renewal events ---
         const customerEmail = data?.customer?.email;
         if (!customerEmail) {
-            console.error("No customer email in payload");
+            console.error("No customer email in payload. Full data:", JSON.stringify(data));
             return res.status(400).json({ error: "No customer email" });
         }
 
