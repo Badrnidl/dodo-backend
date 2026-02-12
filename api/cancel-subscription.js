@@ -1,20 +1,32 @@
 const { createClient } = require("@supabase/supabase-js");
 
-const SUPABASE_URL = process.env.SUPABASE_URL;
-const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
-const DODO_PAYMENTS_API_KEY = process.env.DODO_PAYMENTS_API_KEY;
-const DODO_API_BASE = process.env.DODO_LIVE === "true"
-    ? "https://live.dodopayments.com"
-    : "https://test.dodopayments.com";
-
 module.exports = async function handler(req, res) {
     // CORS preflight
     if (req.method === "OPTIONS") {
+        res.setHeader("Access-Control-Allow-Origin", "*");
+        res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
+        res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
         return res.status(200).end();
     }
 
+    // Set CORS headers for all responses
+    res.setHeader("Access-Control-Allow-Origin", "*");
+
     if (req.method !== "POST") {
         return res.status(405).json({ error: "Method not allowed" });
+    }
+
+    // Validate env vars
+    const SUPABASE_URL = process.env.SUPABASE_URL;
+    const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    const DODO_PAYMENTS_API_KEY = process.env.DODO_PAYMENTS_API_KEY;
+    const DODO_API_BASE = process.env.DODO_LIVE === "true"
+        ? "https://live.dodopayments.com"
+        : "https://test.dodopayments.com";
+
+    if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
+        console.error("Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY env vars");
+        return res.status(500).json({ error: "Server misconfigured: missing Supabase credentials" });
     }
 
     const { userId, subscriptionId } = req.body;
