@@ -123,7 +123,7 @@ module.exports = async function handler(req, res) {
             const {
                 data: { users },
                 error: listError,
-            } = await supabase.auth.admin.listUsers();
+            } = await supabase.auth.admin.listUsers({ page: 1, perPage: 1000 });
 
             if (listError) {
                 console.error("Failed to list users:", listError);
