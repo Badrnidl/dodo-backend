@@ -100,13 +100,20 @@ module.exports = async function handler(req, res) {
         }
 
         // 2. Check metadata for userId (Reliable for new subs with diff emails)
-        if (!userId && data?.metadata?.userId) {
-            console.log(`Found userId in metadata: ${data.metadata.userId}`);
+        // Check in both data.metadata (standard) and data.subscription.metadata (nested)
+        const metadata = data?.metadata || data?.subscription?.metadata;
+
+        console.log(`[DEBUG] Metadata found:`, JSON.stringify(metadata, null, 2));
+
+        if (!userId && metadata?.userId) {
+            console.log(`Found userId in metadata: ${metadata.userId}`);
             // Validate this ID exists
-            const { data: userCheck } = await supabase.auth.admin.getUserById(data.metadata.userId);
+            const { data: userCheck } = await supabase.auth.admin.getUserById(metadata.userId);
             if (userCheck?.user) {
                 userId = userCheck.user.id;
                 userFoundMethod = 'metadata';
+            } else {
+                console.error(`[DEBUG] User ID from metadata not found in Auth: ${metadata.userId}`);
             }
         }
 
