@@ -151,13 +151,33 @@ module.exports = async function handler(req, res) {
                 userFoundMethod = 'email';
                 console.log(`Found user ${userId} by email: ${customerEmail}`);
             } else {
-                console.log(`[DEBUG] User NOT found for email: ${customerEmail}. Printing first 5 users found:`, JSON.stringify(users.slice(0, 5).map(u => u.email), null, 2));
+                console.log(`[DEBUG] User NOT found for email: ${customerEmail}`);
             }
         }
 
         if (!userId) {
             console.error(`No user found for subscription ${subscriptionId} or email`);
-            return res.status(404).json({ error: `User not found` });
+
+            // Collect debug info for the response
+            const customerEmail = data?.customer?.email;
+            const metadata = data?.metadata || data?.subscription?.metadata;
+            let usersSummary = "Not fetched";
+
+            // Re-fetch strictly for debug response if we failed
+            try {
+                const { data: { users } } = await supabase.auth.admin.listUsers({ page: 1, perPage: 50 });
+                usersSummary = users ? `Found ${users.length} users. First 5: ${users.slice(0, 5).map(u => u.email).join(', ')}` : "No users returned";
+            } catch (e) { }
+
+            return res.status(404).json({
+                error: `User not found`,
+                debug: {
+                    receivedEmail: customerEmail,
+                    receivedMetadata: metadata,
+                    databaseUsersPreview: usersSummary,
+                    subscriptionId: subscriptionId
+                }
+            });
         }
 
         // Build update data
