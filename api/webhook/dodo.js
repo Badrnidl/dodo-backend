@@ -142,8 +142,14 @@ module.exports = async function handler(req, res) {
 
             console.log(`[DEBUG] Found ${users?.length} users in Auth.`);
 
+            // DBG: Log first 50 emails to see what we actually have
+            if (users && users.length > 0) {
+                const availableEmails = users.slice(0, 50).map(u => u.email).join(', ');
+                console.log(`[DEBUG] Available emails (first 50): ${availableEmails}`);
+            }
+
             const user = users.find(
-                (u) => u.email?.toLowerCase() === customerEmail.toLowerCase()
+                (u) => u.email?.trim().toLowerCase() === customerEmail.trim().toLowerCase()
             );
 
             if (user) {
@@ -151,7 +157,7 @@ module.exports = async function handler(req, res) {
                 userFoundMethod = 'email';
                 console.log(`Found user ${userId} by email: ${customerEmail}`);
             } else {
-                console.log(`[DEBUG] User NOT found for email: ${customerEmail}`);
+                console.log(`[DEBUG] User NOT found for email: ${customerEmail} (checked against ${users.length} users)`);
             }
         }
 
