@@ -99,7 +99,18 @@ module.exports = async function handler(req, res) {
             }
         }
 
-        // 2. Fallback to email if not found (Required for first-time payment)
+        // 2. Check metadata for userId (Reliable for new subs with diff emails)
+        if (!userId && data?.metadata?.userId) {
+            console.log(`Found userId in metadata: ${data.metadata.userId}`);
+            // Validate this ID exists
+            const { data: userCheck } = await supabase.auth.admin.getUserById(data.metadata.userId);
+            if (userCheck?.user) {
+                userId = userCheck.user.id;
+                userFoundMethod = 'metadata';
+            }
+        }
+
+        // 3. Fallback to email if not found (Required for first-time payment without metadata support)
         if (!userId) {
             const customerEmail = data?.customer?.email;
             if (!customerEmail) {
@@ -151,7 +162,6 @@ module.exports = async function handler(req, res) {
             if (data?.cancel_at_next_billing_date === true) {
                 updateData.auto_renew = false;
             }
-            // Explicit check just in case status changed
             if (data?.status === "cancelled") {
                 updateData.plan = "free";
                 updateData.auto_renew = false;
