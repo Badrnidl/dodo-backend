@@ -41,7 +41,6 @@ module.exports = async function handler(req, res) {
     const data = event.data;
 
     console.log(`Received webhook event: ${eventType}`);
-    console.log(`Event payload keys: ${JSON.stringify(Object.keys(event))}`);
 
     // Ignore unhandled events
     if (!ALL_HANDLED.includes(eventType)) {
@@ -81,36 +80,60 @@ module.exports = async function handler(req, res) {
             return res.status(200).json({ success: true, message: "Subscription cancelled" });
         }
 
-        // --- Handle upgrade/renewal events ---
-        const customerEmail = data?.customer?.email;
-        if (!customerEmail) {
-            console.error("No customer email in payload. Full data:", JSON.stringify(data));
-            return res.status(400).json({ error: "No customer email" });
+        // --- Handle upgrade/renewal/update events ---
+        // 1. First try to find user by subscription_id (Reliable for existing subs)
+        let userId = null;
+        let userFoundMethod = null;
+
+        if (subscriptionId) {
+            const { data: profile, error: profileError } = await supabase
+                .from('profiles')
+                .select('id')
+                .eq('subscription_id', subscriptionId)
+                .single();
+
+            if (profile && !profileError) {
+                userId = profile.id;
+                userFoundMethod = 'subscription_id';
+                console.log(`Found user ${userId} by subscription_id: ${subscriptionId}`);
+            }
         }
 
-        console.log(`Customer email: ${customerEmail}`);
+        // 2. Fallback to email if not found (Required for first-time payment)
+        if (!userId) {
+            const customerEmail = data?.customer?.email;
+            if (!customerEmail) {
+                console.error("No customer email in payload and subscription_id not found in DB.");
+                return res.status(400).json({ error: "No customer email or known subscription" });
+            }
 
-        // Find user by email
-        const {
-            data: { users },
-            error: listError,
-        } = await supabase.auth.admin.listUsers();
+            console.log(`Searching for user by email: ${customerEmail}`);
 
-        if (listError) {
-            console.error("Failed to list users:", listError);
-            return res.status(500).json({ error: "Failed to find user" });
+            const {
+                data: { users },
+                error: listError,
+            } = await supabase.auth.admin.listUsers();
+
+            if (listError) {
+                console.error("Failed to list users:", listError);
+                return res.status(500).json({ error: "Failed to find user" });
+            }
+
+            const user = users.find(
+                (u) => u.email?.toLowerCase() === customerEmail.toLowerCase()
+            );
+
+            if (user) {
+                userId = user.id;
+                userFoundMethod = 'email';
+                console.log(`Found user ${userId} by email: ${customerEmail}`);
+            }
         }
 
-        const user = users.find(
-            (u) => u.email?.toLowerCase() === customerEmail.toLowerCase()
-        );
-
-        if (!user) {
-            console.error(`No user found for email: ${customerEmail}`);
-            return res.status(404).json({ error: `No user found for email: ${customerEmail}` });
+        if (!userId) {
+            console.error(`No user found for subscription ${subscriptionId} or email`);
+            return res.status(404).json({ error: `User not found` });
         }
-
-        console.log(`Found user: ${user.id}`);
 
         // Build update data
         const updateData = {
@@ -128,6 +151,7 @@ module.exports = async function handler(req, res) {
             if (data?.cancel_at_next_billing_date === true) {
                 updateData.auto_renew = false;
             }
+            // Explicit check just in case status changed
             if (data?.status === "cancelled") {
                 updateData.plan = "free";
                 updateData.auto_renew = false;
@@ -147,15 +171,15 @@ module.exports = async function handler(req, res) {
         const { error: updateError } = await supabase
             .from("profiles")
             .update(updateData)
-            .eq("id", user.id);
+            .eq("id", userId);
 
         if (updateError) {
             console.error("Update error:", updateError);
             return res.status(500).json({ error: "Failed to update profile" });
         }
 
-        console.log(`User ${user.id} processed event: ${eventType}`);
-        return res.status(200).json({ success: true, event: eventType, userId: user.id });
+        console.log(`User ${userId} processed event: ${eventType} via ${userFoundMethod}`);
+        return res.status(200).json({ success: true, event: eventType, userId: userId });
     } catch (err) {
         console.error("Webhook processing error:", err);
         return res.status(500).json({ error: "Internal Server Error" });
