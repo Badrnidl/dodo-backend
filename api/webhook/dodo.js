@@ -154,6 +154,10 @@ module.exports = async function handler(req, res) {
 
         if (subscriptionId) {
             updateData.subscription_id = subscriptionId;
+            // Also save customer_id if available (requested by user)
+            if (data?.customer?.id) {
+                updateData.customer_id = data.customer.id;
+            }
             updateData.auto_renew = true;
         }
 
