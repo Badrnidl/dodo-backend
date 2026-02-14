@@ -113,6 +113,9 @@ module.exports = async function handler(req, res) {
         // 3. Fallback to email if not found (Required for first-time payment without metadata support)
         if (!userId) {
             const customerEmail = data?.customer?.email;
+            console.log(`[DEBUG] Payload customer email: ${customerEmail}`);
+            console.log(`[DEBUG] Full Data Payload:`, JSON.stringify(data, null, 2));
+
             if (!customerEmail) {
                 console.error("No customer email in payload and subscription_id not found in DB.");
                 return res.status(400).json({ error: "No customer email or known subscription" });
@@ -130,6 +133,8 @@ module.exports = async function handler(req, res) {
                 return res.status(500).json({ error: "Failed to find user" });
             }
 
+            console.log(`[DEBUG] Found ${users?.length} users in Auth.`);
+
             const user = users.find(
                 (u) => u.email?.toLowerCase() === customerEmail.toLowerCase()
             );
@@ -138,6 +143,8 @@ module.exports = async function handler(req, res) {
                 userId = user.id;
                 userFoundMethod = 'email';
                 console.log(`Found user ${userId} by email: ${customerEmail}`);
+            } else {
+                console.log(`[DEBUG] User NOT found for email: ${customerEmail}. Printing first 5 users found:`, JSON.stringify(users.slice(0, 5).map(u => u.email), null, 2));
             }
         }
 
