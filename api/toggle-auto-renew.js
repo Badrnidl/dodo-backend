@@ -29,7 +29,15 @@ module.exports = async function handler(req, res) {
         return res.status(500).json({ error: "Server misconfigured: missing Supabase credentials" });
     }
 
+    // Validate Dodo API Key specifically
+    if (!DODO_PAYMENTS_API_KEY) {
+        console.error("Missing DODO_PAYMENTS_API_KEY env var");
+        return res.status(500).json({ error: "Server misconfigured: missing Dodo Payments API Key" });
+    }
+
     const { userId, subscriptionId, autoRenew } = req.body;
+
+    console.log(`Received toggle request for User: ${userId}, Sub: ${subscriptionId}, AutoRenew: ${autoRenew}`);
 
     if (!userId || !subscriptionId || typeof autoRenew !== "boolean") {
         return res.status(400).json({ error: "Missing parameters" });
@@ -39,27 +47,28 @@ module.exports = async function handler(req, res) {
 
     try {
         // 1. Call Dodo Payments API to update
-        if (DODO_PAYMENTS_API_KEY) {
-            const response = await fetch(
-                `${DODO_API_BASE}/subscriptions/${subscriptionId}`,
-                {
-                    method: "PATCH",
-                    headers: {
-                        Authorization: `Bearer ${DODO_PAYMENTS_API_KEY}`,
-                        "Content-Type": "application/json",
-                    },
-                    body: JSON.stringify({ cancel_at_next_billing_date: !autoRenew }),
-                }
-            );
-
-            if (!response.ok) {
-                const errText = await response.text();
-                console.error("Dodo Update Error:", errText);
-                return res
-                    .status(response.status)
-                    .json({ error: "Failed to update subscription settings" });
+        console.log(`Calling Dodo API: ${DODO_API_BASE}/subscriptions/${subscriptionId}`);
+        const response = await fetch(
+            `${DODO_API_BASE}/subscriptions/${subscriptionId}`,
+            {
+                method: "PATCH",
+                headers: {
+                    Authorization: `Bearer ${DODO_PAYMENTS_API_KEY}`,
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify({ cancel_at_next_billing_date: !autoRenew }),
             }
+        );
+
+        if (!response.ok) {
+            const errText = await response.text();
+            console.error("Dodo Update Error:", response.status, errText);
+            return res
+                .status(response.status)
+                .json({ error: `Failed to update Dodo subscription: ${errText}` });
         }
+
+        console.log("Dodo API update successful");
 
         // 2. Update Supabase profile
         const { error } = await supabase
@@ -68,6 +77,8 @@ module.exports = async function handler(req, res) {
             .eq("id", userId);
 
         if (error) throw error;
+
+        console.log("Supabase profile updated successfully");
 
         return res.json({ success: true, autoRenew });
     } catch (err) {
