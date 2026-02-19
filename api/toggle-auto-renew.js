@@ -46,6 +46,17 @@ module.exports = async function handler(req, res) {
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
     try {
+        // 0. Verify the user actually owns this subscription
+        const { data: profile, error: profileError } = await supabase
+            .from("profiles")
+            .select("subscription_id")
+            .eq("id", userId)
+            .single();
+
+        if (profileError || !profile || profile.subscription_id !== subscriptionId) {
+            return res.status(403).json({ error: "Invalid subscription for this user" });
+        }
+
         // 1. Call Dodo Payments API to update
         console.log(`Calling Dodo API: ${DODO_API_BASE}/subscriptions/${subscriptionId}`);
         const response = await fetch(
