@@ -39,19 +39,7 @@ module.exports = async function handler(req, res) {
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
     try {
-        // 1. Get the user's email from Supabase Auth
-        const { data: userData, error: userError } = await supabase.auth.admin.getUserById(userId);
-
-        if (userError || !userData?.user) {
-            console.error("User not found:", userError);
-            return res.status(404).json({ error: "User not found in Auth" });
-        }
-
-        const userEmail = userData.user.email;
-        console.log(`Syncing subscription for user ${userId} (${userEmail})`);
-
-        // 2. Search for subscriptions in Dodo Payments
-        // List subscriptions and find one matching this user's email
+        // 1. Fetch all subscriptions from Dodo Payments
         const subsResponse = await fetch(
             `${DODO_API_BASE}/subscriptions`,
             {
@@ -70,46 +58,60 @@ module.exports = async function handler(req, res) {
         }
 
         const subscriptions = await subsResponse.json();
-        console.log(`Found ${subscriptions.length || 0} subscriptions from Dodo`);
-
-        // Find active subscription for this user's email
-        // Subscriptions may be in an array or in a .items array
         const subsList = Array.isArray(subscriptions) ? subscriptions : (subscriptions.items || []);
+        console.log(`Found ${subsList.length} subscriptions from Dodo, searching for userId: ${userId}`);
 
+        // 2. Search strategy: metadata userId first, then client_reference_id, then email as fallback
         let matchedSub = null;
-        for (const sub of subsList) {
-            const subEmail = sub.customer?.email || sub.email;
-            const subStatus = sub.status;
 
+        // Priority 1: Match by metadata userId (set during checkout)
+        for (const sub of subsList) {
+            const meta = sub.metadata || {};
             if (
-                subEmail &&
-                subEmail.trim().toLowerCase() === userEmail.trim().toLowerCase() &&
-                subStatus !== "cancelled"
+                (meta.userId === userId || meta.user_id === userId) &&
+                sub.status !== "cancelled"
             ) {
                 matchedSub = sub;
+                console.log(`Matched by metadata userId: ${sub.subscription_id || sub.id}`);
                 break;
             }
         }
 
-        // Also try matching by metadata userId
+        // Priority 2: Match by client_reference_id (also set during checkout)
         if (!matchedSub) {
             for (const sub of subsList) {
-                const meta = sub.metadata || {};
                 if (
-                    (meta.userId === userId || meta.user_id === userId) &&
+                    sub.client_reference_id === userId &&
                     sub.status !== "cancelled"
                 ) {
                     matchedSub = sub;
+                    console.log(`Matched by client_reference_id: ${sub.subscription_id || sub.id}`);
                     break;
                 }
             }
         }
 
+        // Priority 3: Fall back to email matching (get email from Supabase)
         if (!matchedSub) {
-            console.log(`No active Dodo subscription found for email: ${userEmail}`);
+            const { data: userData, error: userError } = await supabase.auth.admin.getUserById(userId);
+            if (!userError && userData?.user?.email) {
+                const userEmail = userData.user.email.trim().toLowerCase();
+                for (const sub of subsList) {
+                    const subEmail = (sub.customer?.email || sub.email || "").trim().toLowerCase();
+                    if (subEmail && subEmail === userEmail && sub.status !== "cancelled") {
+                        matchedSub = sub;
+                        console.log(`Matched by email fallback: ${sub.subscription_id || sub.id}`);
+                        break;
+                    }
+                }
+            }
+        }
+
+        if (!matchedSub) {
+            console.log(`No active Dodo subscription found for userId: ${userId}`);
             return res.status(404).json({
                 error: "No active subscription found",
-                hint: "No Dodo subscription matches your email. If you recently subscribed, please wait a few minutes and try again."
+                hint: "No Dodo subscription matches your account. If you recently subscribed, please wait a few minutes and try again."
             });
         }
 
