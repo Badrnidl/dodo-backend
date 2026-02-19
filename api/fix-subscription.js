@@ -5,6 +5,12 @@ module.exports = async function handler(req, res) {
         return res.status(405).json({ error: "Method not allowed" });
     }
 
+    // Admin-only endpoint — require secret header
+    const ADMIN_SECRET = process.env.ADMIN_SECRET;
+    if (!ADMIN_SECRET || req.headers["x-admin-secret"] !== ADMIN_SECRET) {
+        return res.status(401).json({ error: "Unauthorized" });
+    }
+
     const SUPABASE_URL = process.env.SUPABASE_URL;
     const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
