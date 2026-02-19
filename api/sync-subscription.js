@@ -108,10 +108,24 @@ module.exports = async function handler(req, res) {
         }
 
         if (!matchedSub) {
-            console.log(`No active Dodo subscription found for userId: ${userId}`);
+            // Return debug info to help diagnose matching issues
+            const debugSubs = subsList.slice(0, 10).map(sub => ({
+                id: sub.subscription_id || sub.id,
+                status: sub.status,
+                email: sub.customer?.email || sub.email || "none",
+                metadata: sub.metadata || {},
+                client_reference_id: sub.client_reference_id || "none",
+            }));
+            console.log(`No active Dodo subscription found for userId: ${userId}`, JSON.stringify(debugSubs));
             return res.status(404).json({
                 error: "No active subscription found",
-                hint: "No Dodo subscription matches your account. If you recently subscribed, please wait a few minutes and try again."
+                hint: "No Dodo subscription matches your account. If you recently subscribed, please wait a few minutes and try again.",
+                debug: {
+                    totalSubscriptions: subsList.length,
+                    searchedUserId: userId,
+                    apiBase: DODO_API_BASE,
+                    subscriptions: debugSubs,
+                }
             });
         }
 
