@@ -64,39 +64,69 @@ module.exports = async function handler(req, res) {
         const activeSubs = subsList.filter(s => s.status !== "cancelled");
         console.log(`Found ${subsList.length} total, ${activeSubs.length} active Dodo subscriptions`);
 
-        // 2. Get all subscription_ids already linked in Supabase profiles
-        const { data: linkedProfiles, error: profilesError } = await supabase
-            .from("profiles")
-            .select("subscription_id")
-            .not("subscription_id", "is", null);
+        // 2. Search strategy: metadata userId first, then client_reference_id, then fallback to unlinked subscription
+        let matchedSub = null;
 
-        if (profilesError) {
-            console.error("Failed to fetch profiles:", profilesError);
-            return res.status(500).json({ error: "Failed to check existing links" });
+        // Priority 1: Match by metadata userId (set during checkout)
+        for (const sub of activeSubs) {
+            const meta = sub.metadata || {};
+            if (meta.userId === userId || meta.user_id === userId) {
+                matchedSub = sub;
+                console.log(`Matched by metadata userId: ${sub.subscription_id || sub.id}`);
+                break;
+            }
         }
 
-        const linkedSubIds = new Set(
-            (linkedProfiles || []).map(p => p.subscription_id).filter(Boolean)
-        );
-        console.log(`${linkedSubIds.size} subscriptions already linked to profiles`);
+        // Priority 2: Match by client_reference_id (also set during checkout)
+        if (!matchedSub) {
+            for (const sub of activeSubs) {
+                if (sub.client_reference_id === userId) {
+                    matchedSub = sub;
+                    console.log(`Matched by client_reference_id: ${sub.subscription_id || sub.id}`);
+                    break;
+                }
+            }
+        }
 
-        // 3. Find active Dodo subscriptions NOT linked to any profile
-        const unlinkedSubs = activeSubs.filter(sub => {
-            const subId = sub.subscription_id || sub.id;
-            return !linkedSubIds.has(subId);
-        });
+        // Priority 3: Fall back to unlinked active subscription (for legacy/current cases)
+        if (!matchedSub) {
+            // Get all subscription_ids already linked in Supabase profiles
+            const { data: linkedProfiles, error: profilesError } = await supabase
+                .from("profiles")
+                .select("subscription_id")
+                .not("subscription_id", "is", null);
 
-        console.log(`${unlinkedSubs.length} unlinked active subscriptions found`);
+            if (profilesError) {
+                console.error("Failed to fetch profiles:", profilesError);
+                // Continue with best effort
+            } else {
+                const linkedSubIds = new Set(
+                    (linkedProfiles || []).map(p => p.subscription_id).filter(Boolean)
+                );
+                console.log(`${linkedSubIds.size} subscriptions already linked to profiles`);
 
-        if (unlinkedSubs.length === 0) {
+                // Find active Dodo subscriptions NOT linked to any profile
+                const unlinkedSubs = activeSubs.filter(sub => {
+                    const subId = sub.subscription_id || sub.id;
+                    return !linkedSubIds.has(subId);
+                });
+
+                console.log(`${unlinkedSubs.length} unlinked active subscriptions found`);
+
+                if (unlinkedSubs.length > 0) {
+                    // Pick the most recent unlinked subscription (first in list = newest)
+                    matchedSub = unlinkedSubs[0];
+                    console.log(`Matched by unlinked fallback: ${matchedSub.subscription_id || matchedSub.id}`);
+                }
+            }
+        }
+
+        if (!matchedSub) {
             return res.status(404).json({
-                error: "No unlinked subscription found",
-                hint: "All active Dodo subscriptions are already linked to users."
+                error: "No matching subscription found",
+                hint: "No Dodo subscription matches your account (metadata) and no unlinked subscriptions are available."
             });
         }
-
-        // 4. Pick the most recent unlinked subscription (first in list = newest)
-        const matchedSub = unlinkedSubs[0];
 
         const subscriptionId = matchedSub.subscription_id || matchedSub.id;
         const customerId = matchedSub.customer?.customer_id || matchedSub.customer?.id || null;
