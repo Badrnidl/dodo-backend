@@ -29,10 +29,10 @@ module.exports = async function handler(req, res) {
 
     // Validate env vars
     const SUPABASE_URL = process.env.SUPABASE_URL;
-    const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    const SUPABASE_SECRET_KEY = process.env.SUPABASE_SECRET_KEY;
 
-    if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
-        console.error("FATAL: Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY env vars");
+    if (!SUPABASE_URL || !SUPABASE_SECRET_KEY) {
+        console.error("FATAL: Missing SUPABASE_URL or SUPABASE_SECRET_KEY env vars");
         return res.status(500).json({ error: "Server misconfigured: missing Supabase credentials" });
     }
 
@@ -48,7 +48,7 @@ module.exports = async function handler(req, res) {
         return res.status(200).json({ received: true, ignored: eventType });
     }
 
-    const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+    const supabase = createClient(SUPABASE_URL, SUPABASE_SECRET_KEY);
 
     try {
         const subscriptionId =
@@ -102,18 +102,23 @@ module.exports = async function handler(req, res) {
         // 2. Check metadata for userId (Reliable for new subs with diff emails)
         // Check in both data.metadata (standard) and data.subscription.metadata (nested)
         const metadata = data?.metadata || data?.subscription?.metadata;
+        // Also check client_reference_id which is often used for this purpose
+        const clientRefId = data?.client_reference_id || data?.subscription?.client_reference_id;
 
         console.log(`[DEBUG] Metadata found:`, JSON.stringify(metadata, null, 2));
 
-        if (!userId && metadata?.userId) {
-            console.log(`Found userId in metadata: ${metadata.userId}`);
+        // Prioritize explicit userId extraction
+        const targetUserId = metadata?.userId || metadata?.user_id || clientRefId;
+
+        if (!userId && targetUserId) {
+            console.log(`Found userId from metadata/reference: ${targetUserId}`);
             // Validate this ID exists
-            const { data: userCheck } = await supabase.auth.admin.getUserById(metadata.userId);
+            const { data: userCheck } = await supabase.auth.admin.getUserById(targetUserId);
             if (userCheck?.user) {
                 userId = userCheck.user.id;
                 userFoundMethod = 'metadata';
             } else {
-                console.error(`[DEBUG] User ID from metadata not found in Auth: ${metadata.userId}`);
+                console.error(`[DEBUG] User ID from metadata not found in Auth: ${targetUserId}`);
             }
         }
 
@@ -195,7 +200,10 @@ module.exports = async function handler(req, res) {
         if (subscriptionId) {
             updateData.subscription_id = subscriptionId;
             // Also save customer_id if available (requested by user)
-            if (data?.customer?.id) {
+            if (data?.customer?.customer_id) {
+                updateData.customer_id = data.customer.customer_id;
+            } else if (data?.customer?.id) {
+                // Fallback if structure varies
                 updateData.customer_id = data.customer.id;
             }
             updateData.auto_renew = true;
