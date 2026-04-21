@@ -12,9 +12,9 @@ module.exports = async function handler(req, res) {
     }
 
     const SUPABASE_URL = process.env.SUPABASE_URL;
-    const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    const SUPABASE_SECRET_KEY = process.env.SUPABASE_SECRET_KEY;
 
-    if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
+    if (!SUPABASE_URL || !SUPABASE_SECRET_KEY) {
         return res.status(500).json({ error: "Config error" });
     }
 
@@ -24,7 +24,7 @@ module.exports = async function handler(req, res) {
         return res.status(400).json({ error: "Missing parameters: userId and subscriptionId are required" });
     }
 
-    const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+    const supabase = createClient(SUPABASE_URL, SUPABASE_SECRET_KEY);
 
     try {
         const { error } = await supabase
