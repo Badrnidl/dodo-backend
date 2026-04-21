@@ -18,14 +18,14 @@ module.exports = async function handler(req, res) {
 
     // Validate env vars
     const SUPABASE_URL = process.env.SUPABASE_URL;
-    const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    const SUPABASE_SECRET_KEY = process.env.SUPABASE_SECRET_KEY;
     const DODO_PAYMENTS_API_KEY = process.env.DODO_PAYMENTS_API_KEY;
     const DODO_API_BASE = process.env.DODO_LIVE === "true"
         ? "https://live.dodopayments.com"
         : "https://test.dodopayments.com";
 
-    if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
-        console.error("Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY env vars");
+    if (!SUPABASE_URL || !SUPABASE_SECRET_KEY) {
+        console.error("Missing SUPABASE_URL or SUPABASE_SECRET_KEY env vars");
         return res.status(500).json({ error: "Server misconfigured: missing Supabase credentials" });
     }
 
@@ -35,7 +35,7 @@ module.exports = async function handler(req, res) {
         return res.status(400).json({ error: "Missing userId or subscriptionId" });
     }
 
-    const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+    const supabase = createClient(SUPABASE_URL, SUPABASE_SECRET_KEY);
 
     try {
         // 1. Verify user owns this subscription
